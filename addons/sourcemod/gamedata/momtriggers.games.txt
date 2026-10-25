@@ -1,0 +1,52 @@
+"Games"
+{
+	"cstrike"
+	{
+		"Offsets"
+		{
+			// CBaseTrigger vtable. Checked against server_srv.so (Linux 32/64 bit) and server.dll (Windows 32/64 bit)
+			// of the 2025 SDK update: on Windows the function containing the "func_pushable" filter check is slot 204.
+			"CBaseTrigger::PassesTriggerFilters"
+			{
+				"windows"	"204"
+				"windows64"	"204"
+				"linux"		"205"
+				"linux64"	"205"
+			}
+
+			// CGameMovement::player, the first member after the vtable pointer (only used as a sanity check on 32 bit).
+			"CGameMovement::player"
+			{
+				"windows"	"4"
+				"windows64"	"8"
+				"linux"		"4"
+				"linux64"	"8"
+			}
+		}
+
+		"Signatures"
+		{
+			// Windows: the function that calls CheckJumpButton (found via "player_jump") and then clears IN_JUMP
+			// from m_nOldButtons; it is CGameMovement vtable slot 24 (Linux 23).
+			"CGameMovement::FullWalkMove"
+			{
+				"library"	"server"
+				"windows"	"\x55\x8B\xEC\x83\xEC\x14\x53\x56\x57\x8B\xF9\x8B\x07"
+				"windows64"	"\x48\x8B\xC4\x48\x89\x58\x08\x48\x89\x68\x10\x48\x89\x70\x18\x57\x48\x83\xEC\x70\x0F\x29\x70\xE8\x48\x8D\x71\x08"
+				"linux"		"@_ZN13CGameMovement12FullWalkMoveEv"
+				"linux64"	"@_ZN13CGameMovement12FullWalkMoveEv"
+			}
+		}
+
+		"Functions"
+		{
+			"CGameMovement::FullWalkMove"
+			{
+				"signature"	"CGameMovement::FullWalkMove"
+				"callconv"	"thiscall"
+				"return"	"void"
+				"this"		"address"
+			}
+		}
+	}
+}

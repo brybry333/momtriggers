@@ -1,0 +1,74 @@
+//=============================================================================
+// Momentum Trigger Outputs (momtriggers) - Hammer add-on for Counter-Strike: Source
+//
+// Add this file to your CS:S game configuration BELOW cstrike.fgd
+// (Hammer: Tools > Options > Game Configurations > Game Data files > Add).
+//
+// OnJump / OnLand work on every trigger_* entity, but this file does not redefine the stock
+// triggers (that breaks key inheritance in stock Hammer). On a trigger_multiple, trigger_push,
+// trigger_teleport, ... just type "OnJump" or "OnLand" into the "My output named" box. Hammer keeps
+// the output (it is shown in red because cstrike.fgd doesn't list it) and VBSP compiles it normally.
+//
+// Everything here needs the momtriggers SourceMod plugin on the server. Without it CS:S ignores
+// OnJump / OnLand, and trigger_userinput does not spawn at all.
+//=============================================================================
+
+@BaseClass = MomentumTriggerOutputs
+[
+	output OnJump(void) : "Fires when a player jumps in this trigger. Only entities that passed this trigger's filters are considered. (momtriggers plugin)"
+	output OnLand(void) : "Fires when a player lands in this trigger. Only entities that passed this trigger's filters are considered. (momtriggers plugin)"
+]
+
+@SolidClass base(Trigger, MomentumTriggerOutputs)
+	line(255 255 255, targetname, filtername)
+= trigger_userinput : "Trigger that fires on user key presses while a player is inside it (Momentum Mod entity, needs the momtriggers plugin; it becomes a trigger_multiple on the server)."
+[
+	lookedkey(choices) : "Key that fires" : 0 =
+	[
+		0 : "Forward"
+		1 : "Back"
+		2 : "Move Left"
+		3 : "Move Right"
+		4 : "Jump"
+		5 : "Duck"
+		6 : "Attack"
+		7 : "Attack 2"
+		8 : "Reload"
+		9 : "Speed"
+		10 : "Walk"
+	]
+	lookedkey2(choices) : "Second key to use that fires, if held down at same time as other keys" : -1 =
+	[
+		-1 : "None"
+		0 : "Forward"
+		1 : "Back"
+		2 : "Move Left"
+		3 : "Move Right"
+		4 : "Jump"
+		5 : "Duck"
+		6 : "Attack"
+		7 : "Attack 2"
+		8 : "Reload"
+		9 : "Speed"
+		10 : "Walk"
+	]
+	lookedkey3(choices) : "Third key to use that fires, if held down at same time as other keys" : -1 =
+	[
+		-1 : "None"
+		0 : "Forward"
+		1 : "Back"
+		2 : "Move Left"
+		3 : "Move Right"
+		4 : "Jump"
+		5 : "Duck"
+		6 : "Attack"
+		7 : "Attack 2"
+		8 : "Reload"
+		9 : "Speed"
+		10 : "Walk"
+	]
+
+	output OnKeyPressed(void) : "Fires when one of the keys is pressed and all of the chosen keys are now held"
+	output OnKeyHeld(void) : "Fires every tick while all of the chosen keys are held"
+	output OnKeyReleased(void) : "Fires when any of the chosen keys is released"
+]
