@@ -35,8 +35,8 @@ what Momentum's own map-porting tools do.
 
 **Entity-only tricks don't solve it.** Renaming the player with `AddOutput targetname` and blocking that
 name with a filter works well for boosters used **once per attempt**, such as start boosters. It can't make
-a boost need a jump. Testing bhop_ceaseless showed this: its targetname-gated floor boosters still fired
-from walking off and crouch-landing. `OnJump` covers boosters that should only fire on a jump.
+a boost need a jump: in bot tests, targetname-gated floor boosters still fired from walking off and
+crouch-landing. `OnJump` covers boosters that should only fire on a jump.
 
 **Plugin only.** A map that relies on these outputs needs this plugin on the server. Vanilla CS:S ignores
 `OnJump` / `OnLand`, and doesn't spawn `trigger_userinput` at all.
