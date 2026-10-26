@@ -6,6 +6,8 @@
 //   rows:  T  tick gtick x y z vx vy vz ground ducked buttons targetname
 //          O  gtick output caller(name/hammerid) activator      (trigger OnUser*/OnStartTouch/OnEndTouch/OnTrigger)
 //          R  gtick relayname activator                          (logic_relay OnTrigger = action executed)
+// mtt_tickinterval                 prints the server tick interval
+// mtt_class <classname> ...        prints whether each class exists here and is a CBaseTrigger (has OnJump/OnLand)
 
 #include <sourcemod>
 #include <sdktools>
@@ -32,6 +34,8 @@ public void OnPluginStart()
 	RegServerCmd("mtt_run", Cmd_Run);
 	RegServerCmd("mtt_ent", Cmd_Ent);
 	RegServerCmd("mtt_name", Cmd_Name);
+	RegServerCmd("mtt_tickinterval", Cmd_TickInterval);
+	RegServerCmd("mtt_class", Cmd_Class);
 	for (int c = 0; c < sizeof(gTrigClasses); c++)
 		for (int o = 0; o < sizeof(gTrigOutputs); o++)
 			HookEntityOutput(gTrigClasses[c], gTrigOutputs[o], OnTrigOutput);
@@ -137,6 +141,30 @@ public Action Cmd_Run(int args)
 public Action Cmd_Name(int args)
 {
 	GetCmdArg(1, gStartName, sizeof(gStartName));
+	return Plugin_Handled;
+}
+
+public Action Cmd_TickInterval(int args)
+{
+	PrintToServer("mtt_tickinterval %.10f", GetTickInterval());
+	return Plugin_Handled;
+}
+
+public Action Cmd_Class(int args)
+{
+	char cls[64];
+	for (int i = 1; i <= args; i++)
+	{
+		GetCmdArg(i, cls, sizeof(cls));
+		int e = CreateEntityByName(cls);
+		if (e == -1)
+		{
+			PrintToServer("mtt_class %s missing", cls);
+			continue;
+		}
+		PrintToServer("mtt_class %s %s", cls, HasEntProp(e, Prop_Data, "m_hTouchingEntities") ? "CBaseTrigger" : "other");
+		RemoveEdict(e);
+	}
 	return Plugin_Handled;
 }
 

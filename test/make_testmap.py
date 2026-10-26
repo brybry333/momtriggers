@@ -14,6 +14,7 @@ the fail teleport 96u above that floor, hammerid 588855, starts disabled in the 
   T6 90006 OnJump/OnLand + fire-once relay          (3600, -2700)
   T7 90007 tall 352x352x256 box (*549 clone)        (4300, -2700)
   T8 90008 all four OnUser slots taken -> OnJump has no slot (error logged)   (5000, -2700)
+  T9 90009 trigger_userinput, key speed, interval 0.25 (OnKeyHeld at most every 0.25 s)   (5700, -2700)
 Every output triggers a logic_relay r_* so the log shows the action really ran (and with which activator).
 """
 import sys, os, struct
@@ -58,7 +59,7 @@ def main(out):
 
     add = ''
     for r in ['r_l2', 'r_kp3', 'r_kh3', 'r_kr3', 'r_j4', 'r_l4', 'r_u3', 'r_u4', 'r_j5', 'r_j6', 'r_l6', 'r_once6',
-              'r_j7', 'r_l7', 'r_j8']:
+              'r_j7', 'r_l7', 'r_j8', 'r_kp9', 'r_kh9']:
         add += relay(r)
     add += ent([('classname', 'filter_activator_name'), ('targetname', 'f_vip'), ('filtername', 'vip'), ('Negated', '0'), ('origin', '3000 -3200 3000')])
     add += pad('*243', 90002, 800, -2700, [('OnLand', 'r_l2,Trigger,,0,-1')])
@@ -76,6 +77,9 @@ def main(out):
     add += pad('*501', 90008, 5000, -2700, [('OnUser1', 'r_u3,Trigger,,0,-1'), ('OnUser2', 'r_u3,Trigger,,0,-1'),
                                             ('OnUser3', 'r_u3,Trigger,,0,-1'), ('OnUser4', 'r_u3,Trigger,,0,-1'),
                                             ('OnJump', 'r_j8,Trigger,,0,-1')])
+    add += pad('*231', 90009, 5700, -2700, [('lookedkey', '9'), ('interval', '0.25'),
+                                            ('OnKeyPressed', 'r_kp9,Trigger,,0,-1'), ('OnKeyHeld', 'r_kh9,Trigger,,0,-1')],
+               cls='trigger_userinput')
 
     t = t.rstrip('\0') + add
     new = (t + '\0').encode('latin1')

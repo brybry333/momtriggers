@@ -6,7 +6,7 @@ Needs mtt.smx + momtriggers.smx loaded and the map momtrig_ceaseless running.
 Expected results follow Momentum's trigger code (decompiled): OnJump/OnLand fire from the trigger's
 Touch on the jump/land command, OnJump also from EndTouch when the jump takes you out that tick.
 """
-import sys, os, time, re
+import sys, os, time, re, math
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from rcon import RCON
 
@@ -89,12 +89,16 @@ slots = {}
 for m in re.finditer(r'hammerid (\d+): OnJump=OnUser(\d) OnLand=OnUser(\d) Pressed=OnUser(\d) Held=OnUser(\d) Released=OnUser(\d)', listing):
     slots[int(m.group(1))] = dict(jump=int(m.group(2)), land=int(m.group(3)), pressed=int(m.group(4)),
                                   held=int(m.group(5)), released=int(m.group(6)))
+intervals = {int(m.group(1)): float(m.group(2)) for m in re.finditer(r'hammerid (\d+):.* interval=([\d.]+)', listing)}
+ti = float(re.search(r'mtt_tickinterval ([\d.]+)', r.cmd('mtt_tickinterval', 0.3)).group(1))
 print(listing.strip())
+print('tick interval %g' % ti)
 print('\n== registration')
-check('all 10 test triggers registered', all(h in slots for h in (415117, 813193, 813482, 90002, 90003, 90004, 90005, 90006, 90007, 90008)), str(sorted(slots)))
+check('all 11 test triggers registered', all(h in slots for h in (415117, 813193, 813482, 90002, 90003, 90004, 90005, 90006, 90007, 90008, 90009)), str(sorted(slots)))
 check('T4 slots avoid its own OnUser3/OnUser4 (OnJump=2, OnLand=1)', slots.get(90004, {}).get('jump') == 2 and slots.get(90004, {}).get('land') == 1, str(slots.get(90004)))
 check('T8 (all OnUser slots used) gets no OnJump slot', slots.get(90008, {}).get('jump') == 0, str(slots.get(90008)))
 check('trigger_userinput converted with 3 key outputs', all(slots.get(90003, {}).get(k) for k in ('pressed', 'held', 'released')), str(slots.get(90003)))
+check('trigger_userinput interval read (T3 none = 0, T9 = 0.25)', intervals.get(90003) == 0 and intervals.get(90009) == 0.25, str(intervals))
 
 # --- real Ceaseless boosters converted to OnJump --------------------------------------------
 print('\n== vertical booster (Ceaseless *218, OnEndTouch -> OnJump)')
@@ -225,6 +229,22 @@ print('\n== T8 no free slot')
 P = 90008
 T, O, R = run('t8', 100, (5000, -2700, Z + 1), 90, 0, '0:0;10:%d;12:0' % IN_JUMP)
 check('jump inside: no OnUser fires on it, r_j8 never runs', not any(o.startswith('OnUser') for g, o, c, a in O if c.endswith('#%d' % P)) and not relays(R, 'r_j8'))
+
+print('\n== T9 trigger_userinput (speed), interval 0.25 s')
+P = 90009; s = slots[P]
+N = math.ceil(0.25 / ti - 0.001)                 # 0.25 s in ticks, rounded up (25 at 100 tick, 17 at 66.7)
+t_re = 5 + 3 * N + 2                              # re-press after the interval has run out
+T, O, R = run('t9_keys', 3 * N + 20, (5700, -2700, Z + 1), 90, 0,
+              '0:0;5:%d;10:0;15:%d;%d:0;%d:%d;%d:0' % (IN_SPEED, IN_SPEED, 5 + 2 * N + 3, t_re, IN_SPEED, t_re + 3))
+held = fires(O, P, s['held'])
+check('on the ground inside the trigger', all(t['ground'] for t in T[2:]) and touches(O, P, 'OnStartTouch'))
+check('OnKeyHeld: first tick held, then every %d ticks while held; re-press inside the interval waits (5, %d, %d, %d)' % (N, 5 + N, 5 + 2 * N, t_re),
+      held == [5, 5 + N, 5 + 2 * N, t_re], str(held))
+check('OnKeyPressed is not limited by the interval (5, 15, %d)' % t_re, fires(O, P, s['pressed']) == [5, 15, t_re], str(fires(O, P, s['pressed'])))
+check('OnKeyHeld actions ran with the player as activator (r_kh9 x4)', len(relays(R, 'r_kh9')) == 4 and all(a.startswith('player') for g, n, a in R if n == 'r_kh9'),
+      str([x for x in R if x[1] == 'r_kh9']))
+T, O, R = run('t3_still_every_tick', 30, (1500, -2700, Z + 1), 90, 0, '0:0;5:%d;20:0' % (IN_SPEED | IN_WALK))
+check('T3 (no interval) still fires OnKeyHeld every tick', fires(O, 90003, slots[90003]['held']) == list(range(5, 20)), str(fires(O, 90003, slots[90003]['held'])))
 
 print('\n== plugin reload mid-map')
 out = r.cmd('sm plugins reload momtriggers', 1.0)

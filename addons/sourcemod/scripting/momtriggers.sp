@@ -40,6 +40,9 @@
  * The outputs are fired through the engine's own output system: at map load the OnJump / OnLand /
  * OnKey* keyvalues are moved to an OnUser1-4 slot the trigger does not use, and firing calls
  * FireUserN with the player as activator (caller = the trigger, same as Momentum).
+ *
+ * Addition that Momentum does not have: trigger_userinput "interval" (seconds, default 0). OnKeyHeld
+ * fires at most once per interval for each player instead of every tick. 0 keeps Momentum's behaviour.
  */
 
 #pragma semicolon 1
@@ -49,7 +52,7 @@
 #include <sdktools>
 #include <sdkhooks>
 
-#define PLUGIN_VERSION "1.0.0"
+#define PLUGIN_VERSION "1.1.0"
 
 #define MARKER_KEY "_momtriggers"
 #define MAX_ENTS 2048
@@ -77,6 +80,7 @@ enum struct TrigInfo
 	int slot[OUT_COUNT];	// OnUserN carrying this output, 0 = none
 	int buttons;			// trigger_userinput key mask
 	bool userinput;
+	float interval;			// trigger_userinput "interval": seconds between OnKeyHeld fires, 0 = every tick
 }
 
 enum struct LumpEnt
@@ -102,6 +106,7 @@ int g_EntInfo[MAX_ENTS];	// g_Infos index + 1, 0 = not ours
 bool g_InList[MAX_ENTS][MAXPLAYERS + 1];	// Momentum's m_hTouchingEntities membership
 int g_FiredJump[MAX_ENTS][MAXPLAYERS + 1];
 int g_FiredLand[MAX_ENTS][MAXPLAYERS + 1];
+int g_HeldTick[MAX_ENTS][MAXPLAYERS + 1];	// player tickbase of the last OnKeyHeld, -1 = none yet
 
 int g_CmdClient;			// client whose usercmd is running, 0 = none
 int g_CmdSerial[MAXPLAYERS + 1];
@@ -456,7 +461,7 @@ static void BuildInfos()
 	g_InfoByKey.Clear();
 	g_iLumpCandidates = 0;
 
-	char value[256], model[PLATFORM_MAX_PATH], hammerid[32], mapKey[PLATFORM_MAX_PATH + 32], parts[7][12];
+	char key[64], value[256], model[PLATFORM_MAX_PATH], hammerid[32], mapKey[PLATFORM_MAX_PATH + 32], parts[7][12];
 	int n = EntityLump.Length();
 
 	for (int i = 0; i < n; i++)
@@ -472,18 +477,28 @@ static void BuildInfos()
 			continue;
 		}
 
-		e.GetNextKey("model", model, sizeof(model));
-		e.GetNextKey("hammerid", hammerid, sizeof(hammerid));
-		delete e;
-
 		if (ExplodeString(value, " ", parts, sizeof(parts), sizeof(parts[])) != 7)
+		{
+			delete e;
 			continue;
+		}
 
 		TrigInfo ti;
 		for (int k = 0; k < OUT_COUNT; k++)
 			ti.slot[k] = StringToInt(parts[k]);
 		ti.buttons = StringToInt(parts[5]);
 		ti.userinput = StringToInt(parts[6]) != 0;
+
+		for (int j = 0, len = e.Length; ti.userinput && j < len; j++)
+		{
+			e.Get(j, key, sizeof(key), value, sizeof(value));
+			if (StrEqual(key, "interval", false))
+				ti.interval = StringToFloat(value);
+		}
+
+		e.GetNextKey("model", model, sizeof(model));
+		e.GetNextKey("hammerid", hammerid, sizeof(hammerid));
+		delete e;
 
 		FormatEx(mapKey, sizeof(mapKey), "%s|%d", model, StringToInt(hammerid));
 		int existing;
@@ -554,6 +569,7 @@ static void TryRegister(int entity)
 		g_InList[entity][i] = false;
 		g_FiredJump[entity][i] = 0;
 		g_FiredLand[entity][i] = 0;
+		g_HeldTick[entity][i] = -1;
 	}
 }
 
@@ -580,6 +596,7 @@ static void ResetClient(int client)
 			g_InList[ent][client] = false;
 			g_FiredJump[ent][client] = 0;
 			g_FiredLand[ent][client] = 0;
+			g_HeldTick[ent][client] = -1;
 		}
 	}
 }
@@ -699,6 +716,24 @@ static void TryFireJump(int trigger, TrigInfo ti, int client)
 	}
 }
 
+// trigger_userinput "interval": OnKeyHeld at most once per interval for each player. Counted in the
+// player's own command ticks (tickbase), so commands that run late in one server tick still count as
+// separate ticks. Releasing the keys or leaving the trigger does not restart it, so tapping can't beat it.
+static bool HeldIntervalOver(int trigger, float interval, int client)
+{
+	if (interval <= 0.0)
+		return true;
+
+	int now = GetEntProp(client, Prop_Send, "m_nTickBase");
+	int last = g_HeldTick[trigger][client];
+	int wait = RoundToCeil(interval / GetTickInterval() - 0.001);
+	if (last != -1 && now >= last && now - last < wait)
+		return false;
+
+	g_HeldTick[trigger][client] = now;
+	return true;
+}
+
 public Action Hook_StartTouch(int trigger, int other)
 {
 	if (!IsPlayer(other))
@@ -752,7 +787,7 @@ public Action Hook_Touch(int trigger, int other)
 
 		if (ti.slot[OUT_PRESSED] && (GetEntProp(other, Prop_Data, "m_afButtonPressed") & mask) && allHeld)
 			Fire(trigger, ti.slot[OUT_PRESSED], OUT_PRESSED, other);
-		if (ti.slot[OUT_HELD] && allHeld)
+		if (ti.slot[OUT_HELD] && allHeld && HeldIntervalOver(trigger, ti.interval, other))
 			Fire(trigger, ti.slot[OUT_HELD], OUT_HELD, other);
 		if (ti.slot[OUT_RELEASED] && (GetEntProp(other, Prop_Data, "m_afButtonReleased") & mask))
 			Fire(trigger, ti.slot[OUT_RELEASED], OUT_RELEASED, other);
@@ -788,9 +823,9 @@ public Action Command_List(int client, int args)
 		g_Infos.GetArray(g_EntInfo[ent] - 1, ti);
 		GetEntityClassname(ent, classname, sizeof(classname));
 		GetEntPropString(ent, Prop_Data, "m_iName", name, sizeof(name));
-		ReplyToCommand(client, "#%d %s%s \"%s\" hammerid %d: OnJump=OnUser%d OnLand=OnUser%d Pressed=OnUser%d Held=OnUser%d Released=OnUser%d buttons=%d",
+		ReplyToCommand(client, "#%d %s%s \"%s\" hammerid %d: OnJump=OnUser%d OnLand=OnUser%d Pressed=OnUser%d Held=OnUser%d Released=OnUser%d buttons=%d interval=%.3f",
 			ent, classname, ti.userinput ? " (trigger_userinput)" : "", name, GetEntProp(ent, Prop_Data, "m_iHammerID"),
-			ti.slot[OUT_JUMP], ti.slot[OUT_LAND], ti.slot[OUT_PRESSED], ti.slot[OUT_HELD], ti.slot[OUT_RELEASED], ti.buttons);
+			ti.slot[OUT_JUMP], ti.slot[OUT_LAND], ti.slot[OUT_PRESSED], ti.slot[OUT_HELD], ti.slot[OUT_RELEASED], ti.buttons, ti.interval);
 		count++;
 	}
 	ReplyToCommand(client, "[momtriggers] %d trigger(s) registered (0 = output not used).", count);

@@ -4,10 +4,15 @@
 // Add this file to your CS:S game configuration BELOW cstrike.fgd
 // (Hammer: Tools > Options > Game Configurations > Game Data files > Add).
 //
-// OnJump / OnLand work on every trigger_* entity, but this file does not redefine the stock
-// triggers (that breaks key inheritance in stock Hammer). On a trigger_multiple, trigger_push,
-// trigger_teleport, ... just type "OnJump" or "OnLand" into the "My output named" box. Hammer keeps
-// the output (it is shown in red because cstrike.fgd doesn't list it) and VBSP compiles it normally.
+// It adds OnJump / OnLand to the trigger_* entities and adds trigger_userinput.
+//
+// Hammer has no way to add outputs to a class that's already defined, so the stock triggers
+// below are full copies of the CS:S base.fgd definitions with OnJump / OnLand added. A class
+// defined again replaces the earlier one, so keep this file below cstrike.fgd. Only the triggers
+// that work for players in CS:S multiplayer are listed (not trigger_wind, trigger_impact,
+// trigger_changelevel, trigger_autosave, ...).
+// On a trigger not listed here you can still type "OnJump" / "OnLand" into the "My output named"
+// box; Hammer keeps the output and VBSP compiles it normally.
 //
 // Everything here needs the momtriggers SourceMod plugin on the server. Without it CS:S ignores
 // OnJump / OnLand, and trigger_userinput does not spawn at all.
@@ -68,7 +73,202 @@
 		10 : "Walk"
 	]
 
+	interval(float) : "OnKeyHeld interval (seconds)" : "0" : "In seconds. OnKeyHeld fires at most once every this many seconds for each player: right away when the keys are held, then again each time the interval runs out while they are still held. Releasing and pressing again does not restart it. 0 = every tick (Momentum's behaviour). Example: 0.25 = up to 4 times a second. Not in Momentum Mod, it is a momtriggers addition."
+
 	output OnKeyPressed(void) : "Fires when one of the keys is pressed and all of the chosen keys are now held"
-	output OnKeyHeld(void) : "Fires every tick while all of the chosen keys are held"
+	output OnKeyHeld(void) : "Fires every tick while all of the chosen keys are held, or once per interval if 'OnKeyHeld interval (seconds)' is set"
 	output OnKeyReleased(void) : "Fires when any of the chosen keys is released"
+]
+
+//-----------------------------------------------------------------------------
+// Stock CS:S triggers (copied from base.fgd) with OnJump / OnLand added
+//-----------------------------------------------------------------------------
+
+@SolidClass base(Trigger, MomentumTriggerOutputs) = trigger_multiple :
+	"A trigger volume that can be triggered multiple times."
+[
+	wait(integer) : "Delay Before Reset" : 1 : "Amount of time, in seconds, after the trigger_multiple has triggered before it can be triggered again. If set to -1, it will never trigger again (in which case you should just use a trigger_once)."
+
+	// Inputs
+	input TouchTest(void) : "Tests if the trigger is being touched and fires an output based on whether the value is true or false."
+
+
+	// Outputs
+	output OnTrigger(void) : "Fired whenever the trigger is activated."
+	output OnTouching(void) : "Fired when the TestTouch input is true (something is touching the trigger.)"
+	output OnNotTouching(void) : "Fired when the TestTouch input is not true (nothing is touching the trigger.)"
+]
+
+@SolidClass base(TriggerOnce, MomentumTriggerOutputs) = trigger_once :
+	"A trigger volume that removes itself after it is triggered once."
+[
+	// Outputs
+	output OnTrigger(void) : "Fired whenever the trigger is activated."
+]
+
+@SolidClass base(Trigger, MomentumTriggerOutputs) = trigger_push :
+	"A trigger volume that pushes entities that touch it."
+[
+	pushdir(angle) : "Push Direction (Pitch Yaw Roll)" : "0 0 0" : "Angles indicating the direction to push touched entities."
+
+	spawnflags(flags) =
+	[
+		128: "Once Only" : 0
+		256: "Affects Ladders (Half-Life 2)" : 0
+	]
+
+	speed(integer) : "Speed of Push" : 40 : "The speed at which to push entities away, in inches / second."
+	alternateticksfix(float) : "Scale force for alternate ticks" : "0" : "If nonzero, scale the force by this amount when running with alternate ticks. This fixes problems with an overly large force due to the longer frametime on when running with sv_alternateticks 1."
+]
+
+@SolidClass base(Trigger, MomentumTriggerOutputs) = trigger_teleport :
+	"A trigger volume that teleports entities that touch it. Entities are teleported to the Remote Destination, and have their angles "+
+	"set to that of the Remote Destination's. If a Local Destination Landmark is specified, teleported entities are offset from the target "+
+	"by their initial offset from the landmark, and their angles are left alone."
+[
+	target(target_destination) : "Remote Destination" : : "The entity specifying the point to which entities should be teleported."
+	landmark(target_destination) : "Local Destination Landmark" : : "If specified, then teleported entities are offset from the target by their initial offset from the landmark."
+	spawnflags(flags) =
+	[
+		32: "Preserve angles even when a local landmark is not specified" : 0
+	]
+]
+
+@SolidClass base(Trigger, MomentumTriggerOutputs) = trigger_teleport_relative :
+	"A trigger volume that teleports entities that touch it. Entities are teleported by Offset from their current position. Useful to get " +
+	"objects out of situations where levels or entities suddenly appear interseting with them."
+[
+	teleportoffset(vector) : "Offset (X Y Z)" : "0 0 0" : "The offset (in World-Space Coordinates X Y Z) to teleport the entity when the trigger is touched."
+]
+
+@SolidClass base(Trigger, MomentumTriggerOutputs) = trigger_gravity :
+	"A trigger volume that changes the gravity on any entity that touches it."
+[
+	gravity(integer) : "Gravity (0-1)" : 1
+]
+
+@SolidClass base(Trigger, Targetname, MomentumTriggerOutputs) = trigger_hurt :
+	"A trigger volume that damages entities that touch it."
+[
+	master(string) : "Master (Obsolete)" : : "Legacy support: The name of a master entity. If the master hasn't been activated, this entity will not activate."
+	damage(integer) : "Damage" : 10 : "The amount of damage done to entities that touch this trigger. The damage is done every half-second. See also 'Damage Model' for extra details on how damage can be dealt."
+	damagecap(integer) : "Damage Cap" : 20 : "Maximum damage dealt per second. This field is only used if you select the Doubling w/Forgiveness damage model, via the spawnflag."
+	damagetype(choices) : "Damage Type" : 0 =
+	[
+		0 : "GENERIC"
+		1 : "CRUSH"
+		2 : "BULLET"
+		4 : "SLASH"
+		8 : "BURN"
+		16 : "FREEZE"
+		32 : "FALL"
+		64 : "BLAST"
+		128 : "CLUB"
+		256 : "SHOCK"
+		512 : "SONIC"
+		1024 : "ENERGYBEAM"
+		16384: "DROWN"
+		32768 : "PARALYSE"
+		65536 : "NERVEGAS"
+		131072 : "POISON"
+		262144 : "RADIATION"
+		524288 : "DROWNRECOVER"
+		1048576 : "CHEMICAL"
+		2097152 : "SLOWBURN"
+		4194304 : "SLOWFREEZE"
+	]
+
+	damagemodel(choices) : "Damage Model" : 0 : "How damage is dealt. Normal always does the specified amount of damage each half second. Doubling starts with the specified amount and doubles it each time it hurts the toucher. Forgiveness means that if the toucher gets out of the trigger the damage will reset to the specified value. Good for making triggers that are deadly over time without having to cause massive damage on each touch." =
+	[
+		0 : "Normal"
+		1 : "Doubling w/forgiveness"
+	]
+
+	nodmgforce(choices) : "Zero Damage Force" : 0 : "Should the damaged entity receive no physics force from this trigger." =
+	[
+		0 : "No"
+		1 : "Yes"
+	]
+
+	// Inputs
+	input SetDamage(float) : "Set a new amount of damage for this trigger."
+
+	// Outputs
+	output OnHurt(void) : "Fired whenever this trigger hurts something other than a player."
+	output OnHurtPlayer(void) : "Fired whenever this trigger hurts a player."
+]
+
+@SolidClass base(Trigger, MomentumTriggerOutputs) = trigger_look :
+	"An entity used to trigger something when the player looks at something. It fires 'OnTrigger' when the player "+
+	"looks at a target entity for the given amount of time, while within the trigger volume. If the player leaves "+
+	"the trigger or looks away from the target entity the clock resets. If the 'Use Velocity instead of facing' spawnflag " +
+	"is checked, the trigger uses the player's velocity instead of the player's view, so it determines whenever the player "+
+	"is moving toward the target entity. Useful for triggering when players are driving a vehicle at something."+
+	"NOTE: Only designed for single-player game. "
+[
+	spawnflags(flags) =
+	[
+		128: "Fire Once" : 1
+		256: "Use Velocity instead of facing" : 0
+	]
+
+	target(target_destination) : "Look Target" : : "The name of the entity to be looked at."
+	LookTime(string) : "LookTime" : "0.5" : "The time, in seconds, that the player must look the target before firing the output. Resets if player leaves trigger, or looks outside the Field of View threshold."
+	FieldOfView(string) : "FieldOfView" : "0.9" : "How close the player has to be looking at the target. 1.0 = straight ahead\n 0.0 = +/- 90 degrees\n -1.0 = all directions)."
+	Timeout(float) : "Timeout" : "0" : "The time, in seconds, to wait after player enters the trigger before firing the OnTimeout output, 0 = never."
+
+	// Output
+	output OnTrigger(void) : "Fired when the trigger is activated."
+	output OnTimeout(void) : "Fired after the timeout interval expires if the player never looked at the target."
+]
+
+@SolidClass base(Trigger, MomentumTriggerOutputs) = trigger_playermovement :
+	"An entity that can be used to disable player's automatic ducking/unducking when jumping."
+[
+	spawnflags(flags) =
+	[
+	// Remove this after maps fixed up:
+		16: "(OBSOLETE, Uncheck me)" : 0
+		128: "Disable auto player movement" : 1
+		2048: "Auto-duck while in trigger" : 0
+	]
+]
+
+@SolidClass base(Trigger, MomentumTriggerOutputs) = trigger_proximity :
+	"Measures the distance of the player within the trigger volume from a given point (and within " +
+	"a given radius). The NearestPlayerDistance output will be 0 when the player is at the center point, " +
+	"and 1 when the player is at the radius."
+[
+	measuretarget(target_destination) : "Point to Measure From" : : "The name of a target entity who's origin is the point to measure the player's distance from."
+	radius(string) : "Radius to measure within" : 256 : "The radius to which the distance should be mapped. If the player is outside the radius he will be ignored."
+
+	// Outputs
+	output NearestEntityDistance(integer) : "Fired continuously when entities are touching the trigger volume. The output parameter is the distance from the "+
+						"Point to Measure From to the nearest entity that passed the trigger filters. The distance is mapped to the radius distance, "+
+						"so it will be 0 when the entity is on the point, and 1 when the entity is at the edge of the radius."
+]
+
+@SolidClass base(Trigger, MomentumTriggerOutputs) = trigger_soundscape :
+	"Soundscape trigger. " +
+	"It is not necessary to create outputs for this trigger. It automatically will trigger the " +
+	"soundscape referred to by its 'Soundscape' property."
+[
+	soundscape(target_source) : "Soundscape"
+]
+
+@SolidClass base(Trigger, Targetname, MomentumTriggerOutputs) = trigger_remove :
+	"A trigger volume that removes any entities that touch it. Be careful, removing some entities can cause instability. "+
+	"This is not the same as killing entities. i.e. NPCs removed in this manner will not fire their OnKilled outputs."
+[
+	// Outputs
+	output OnRemove(void) : "Fired whenever an entity is removed."
+]
+
+@SolidClass base(Trigger, MomentumTriggerOutputs) = trigger_apply_impulse :
+	"A trigger that adds impulse to touching entities."
+[
+	impulse_dir(angle) : "Impulse Direction (Pitch Yaw Roll)" : "0 0 0" : "Angles indicating the direction to push touching entities."
+	force(float) : "Impulse Force" : "300" : ""
+
+	input ApplyImpulse(void)  : "Apply impulse to touching entities"
 ]

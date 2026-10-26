@@ -12,7 +12,7 @@ trigger. This plugin brings them to CS:S:
 |---|---|
 | **`OnJump`** (any `trigger_*`) | a player jumps while inside the trigger |
 | **`OnLand`** (any `trigger_*`) | a player lands while inside the trigger |
-| **`trigger_userinput`** with `OnKeyPressed`, `OnKeyHeld`, `OnKeyReleased` | a player inside presses, holds or releases a chosen key or combo of up to 3 keys (old name `trigger_momentum_userinput` also works) |
+| **`trigger_userinput`** with `OnKeyPressed`, `OnKeyHeld`, `OnKeyReleased` | a player inside presses, holds or releases a chosen key or combo of up to 3 keys (old name `trigger_momentum_userinput` also works). Optional `interval` (seconds) limits how often `OnKeyHeld` fires. |
 
 Mappers use these like any other output in Hammer. The server runs this plugin, and the outputs behave
 like Momentum's: same timing, same filter rules, same edge cases. That behaviour was taken from Momentum's
@@ -43,10 +43,13 @@ crouch-landing. `OnJump` covers boosters that should only fire on a jump.
 
 ## Quick start
 
+**Download** the zip from [Releases](https://github.com/brybry333/momtriggers/releases/latest). It holds the
+plugin, the gamedata, the Hammer FGD and the source.
+
 - **Server owners:** drop the `.smx` and the gamedata file into SourceMod 1.12+ (details below), then
   change map.
-- **Mappers:** add `OnJump` / `OnLand` outputs to your triggers. In Hammer, type the name into the output
-  box. Add `fgd/momtriggers.fgd` if you want `trigger_userinput`.
+- **Mappers:** add `fgd/momtriggers.fgd` to Hammer (below `cstrike.fgd`). `OnJump` / `OnLand` then show up
+  in the output list of the triggers, and `trigger_userinput` becomes available.
 
 ## Install (server)
 
@@ -66,27 +69,35 @@ takes effect on the next map.
 | `sm_momtriggers` | (admin) lists the triggers on the current map that use these outputs |
 | `momtriggers_debug 1` | prints every OnJump / OnLand / OnKey* the plugin fires |
 
-**Platforms.** Windows and Linux, 32-bit and 64-bit. The full bot test suite (39 checks) passed on all four
+**Platforms.** Windows and Linux, 32-bit and 64-bit. The full bot test suite (45 checks) passed on all four
 at **100 tick**, using idk1703's [TickrateEnabler](https://github.com/idk1703/TickrateEnabler) (32/64-bit
 builds). All four also passed at the default 66.7 tick.
 
 | Server | 100 tick | 66.7 tick |
 |---|---|---|
-| Linux, 32-bit `srcds_linux` | 39/39 | 39/39 |
-| Linux, 64-bit `srcds_linux64` | 39/39 | 39/39 |
-| Windows, 32-bit `srcds.exe` | 39/39 | 39/39 |
-| Windows, 64-bit `srcds_win64.exe` | 39/39 | 39/39 |
+| Linux, 32-bit `srcds_linux` | 45/45 | 45/45 |
+| Linux, 64-bit `srcds_linux64` | 45/45 | 45/45 |
+| Windows, 32-bit `srcds.exe` | 45/45 | 45/45 |
+| Windows, 64-bit `srcds_win64.exe` | 45/45 | 45/45 |
 
 64-bit CS:S servers use TF2's 64-bit launcher (`srcds_linux64` / `srcds_win64.exe`). The only gamedata entry
 is one vtable offset, checked against all four `server` binaries.
 
 ## For mappers
 
-**Using OnJump / OnLand.** Add an output named `OnJump` or `OnLand` to any trigger, exactly like
-`OnStartTouch`. Hammer's CS:S FGD doesn't list these names, so type them into the "My output named"
-box yourself. Hammer keeps them (they show in red) and VBSP compiles them normally.
+**Hammer setup.** Add `fgd/momtriggers.fgd` to your CS:S game configuration, *below* `cstrike.fgd`
+(Tools > Options > Game Configurations > Game Data files). It adds `trigger_userinput` and puts `OnJump` /
+`OnLand` in the output list of these triggers: `trigger_multiple`, `trigger_once`, `trigger_push`,
+`trigger_teleport`, `trigger_teleport_relative`, `trigger_gravity`, `trigger_hurt`, `trigger_look`,
+`trigger_playermovement`, `trigger_proximity`, `trigger_soundscape`, `trigger_remove`, `trigger_apply_impulse`.
+- Hammer can't add outputs to a class that's already defined, so the FGD redefines those triggers with
+  full copies of the stock CS:S `base.fgd` definitions plus `OnJump` / `OnLand`. Their keys and outputs are
+  unchanged. If you use a custom `cstrike.fgd` that changed one of these triggers, load it after this file.
+- Without the FGD, type `OnJump` / `OnLand` into the "My output named" box. Hammer keeps them (they show in
+  red) and VBSP compiles them normally.
 
-`fgd/momtriggers.fgd` adds `trigger_userinput`. Add it in Hammer below `cstrike.fgd`.
+**Using OnJump / OnLand.** Add an output named `OnJump` or `OnLand` to any trigger, exactly like
+`OnStartTouch`.
 
 **Converting an `OnEndTouch` jump booster.** Rename its outputs from `OnEndTouch` to `OnJump`. That's
 exactly what Momentum's entity tools do ("Convert to OnJump trigger_multiple"):
@@ -120,6 +131,13 @@ so it was decompiled from the current Playtest build.
   - `OnKeyHeld` fires every tick all of them are held.
   - `OnKeyReleased` fires when any one of them is released.
   - All three only fire while the player is inside the trigger and passes its filters.
+  - `interval` (**seconds**, default 0) is an addition that Momentum doesn't have. It limits `OnKeyHeld`
+    to once per interval for each player. It fires right away when the keys are held, then each time the
+    interval runs out while they stay held. Releasing the keys or leaving the trigger doesn't restart
+    it, so tapping a key can't fire it faster. Example: `0.25` gives up to 4 fires a second, for a "boost
+    while crouch is held" that doesn't stack a boost every tick. 0 is Momentum's every-tick behaviour.
+    The interval is rounded up to whole ticks (0.25 s = 25 ticks at 100 tick) and counted per player
+    command, like the rest of the plugin. `OnKeyPressed` and `OnKeyReleased` ignore it.
   - Key values: -1 None, 0 Forward, 1 Back, 2 Move Left, 3 Move Right, 4 Jump, 5 Duck, 6 Attack,
     7 Attack 2, 8 Reload, 9 Speed, 10 Walk. Momentum's website docs number these wrong; the FGD and
     the game use these values.
@@ -164,10 +182,11 @@ so it was decompiled from the current Playtest build.
 
 - `make_testmap.py` builds `momtrig_ceaseless.bsp` from bhop_ceaseless:
   - Ceaseless's real vertical and horizontal boosters, converted to OnJump
-  - test triggers for OnLand, `trigger_userinput`, filters, OnUser slot conflicts and a tall volume
-- `momtrig_tests.py` runs 39 checks against a server.
+  - test triggers for OnLand, `trigger_userinput` (with and without `interval`), filters, OnUser slot
+    conflicts and a tall volume
+- `momtrig_tests.py` runs 45 checks against a server.
 - `mtt.sp` is the bot driver plugin.
 
-All 39 checks passed on both platforms.
+All 45 checks passed on all four platforms.
 
 Credits: Momentum Mod team (https://github.com/momentum-mod) for the original outputs and entity.
