@@ -20,7 +20,7 @@ import sys, os, struct
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import bspents
 
-SRC = os.environ.get('CEASELESS', os.path.expanduser('~/Desktop/bhop_restricted/bhop_ceaseless.zip'))
+SRC = os.environ.get('CEASELESS', 'bhop_ceaseless.bsp')   # the map is not included; a .zip containing it works too
 Z = 2944
 
 def ent(kv):
@@ -88,4 +88,4 @@ def main(out):
     print('wrote', out)
 
 if __name__ == '__main__':
-    main(sys.argv[1] if len(sys.argv) > 1 else os.path.expanduser('~/msf-rig/cstrike/maps/momtrig_ceaseless.bsp'))
+    main(sys.argv[1] if len(sys.argv) > 1 else 'momtrig_ceaseless.bsp')

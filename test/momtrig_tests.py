@@ -1,17 +1,17 @@
 #!/usr/bin/env python3
 """momtriggers bot test suite on momtrig_ceaseless (see make_testmap.py).
 
-usage: momtrig_tests.py [port] [logdir]     (defaults: Linux rig 27115, ~/msf-rig/.../logs)
+usage: momtrig_tests.py [port] [logdir]     (defaults: 27115, $MTT_LOGS or cstrike/addons/sourcemod/logs)
 Needs mtt.smx + momtriggers.smx loaded and the map momtrig_ceaseless running.
 Expected results follow Momentum's trigger code (decompiled): OnJump/OnLand fire from the trigger's
 Touch on the jump/land command, OnJump also from EndTouch when the jump takes you out that tick.
 """
 import sys, os, time, re
-sys.path.insert(0, os.path.expanduser('~/Documents/counter strike source shit/momsurffix-ceilingfix/test-harness'))
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from rcon import RCON
 
 PORT = int(sys.argv[1]) if len(sys.argv) > 1 else 27115
-LOG = sys.argv[2] if len(sys.argv) > 2 else os.path.expanduser('~/msf-rig/cstrike/addons/sourcemod/logs')
+LOG = sys.argv[2] if len(sys.argv) > 2 else os.environ.get('MTT_LOGS', 'cstrike/addons/sourcemod/logs')
 IN_JUMP, IN_DUCK, IN_SPEED, IN_WALK = 2, 4, 1 << 17, 1 << 18
 Z = 2944
 r = RCON(port=PORT)

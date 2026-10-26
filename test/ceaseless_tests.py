@@ -5,10 +5,10 @@ Counts boosts per run from the velocity log (a +250/+500 x or +800 z step = one 
 trigger touch events, so we can see what each anti-cboost design actually allows.
 """
 import sys, os, time, csv
-sys.path.insert(0, os.path.expanduser('~/Documents/counter strike source shit/momsurffix-ceilingfix/test-harness'))
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from rcon import RCON
 
-LOG = os.path.expanduser('~/msf-rig/cstrike/addons/sourcemod/logs')
+LOG = os.environ.get('MTT_LOGS', 'cstrike/addons/sourcemod/logs')
 IN_JUMP, IN_DUCK = 2, 4
 
 def park(r):

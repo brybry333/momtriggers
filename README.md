@@ -1,17 +1,52 @@
 # Momentum Trigger Outputs (momtriggers)
 
-A SourceMod plugin that brings Momentum Mod's trigger outputs to Counter-Strike: Source:
+A SourceMod plugin that adds Momentum Mod's trigger outputs to Counter-Strike: Source, so CS:S maps can
+use them the same way Momentum maps do.
 
-- **`OnJump`** and **`OnLand`** on every `trigger_*` entity
-- **`trigger_userinput`** (also accepts the old name `trigger_momentum_userinput`) with
-  `OnKeyPressed`, `OnKeyHeld` and `OnKeyReleased`, for combos of up to 3 keys
+## What it is
 
-The point is boosters that only fire on a real jump. An `OnEndTouch` booster also fires when you
-walk off it, get pushed off it, or crouch on the exact landing tick (crouch boosting). An `OnJump`
-booster doesn't.
+[Momentum Mod](https://github.com/momentum-mod) gave every trigger two new outputs, and added a key-press
+trigger. This plugin brings them to CS:S:
 
-Maps that use these outputs only work on servers running the plugin. Vanilla CS:S ignores
+| Output / entity | Fires when |
+|---|---|
+| **`OnJump`** (any `trigger_*`) | a player jumps while inside the trigger |
+| **`OnLand`** (any `trigger_*`) | a player lands while inside the trigger |
+| **`trigger_userinput`** with `OnKeyPressed`, `OnKeyHeld`, `OnKeyReleased` | a player inside presses, holds or releases a chosen key or combo of up to 3 keys (old name `trigger_momentum_userinput` also works) |
+
+Mappers use these like any other output in Hammer. The server runs this plugin, and the outputs behave
+like Momentum's: same timing, same filter rules, same edge cases. That behaviour was taken from Momentum's
+current game code; see *Exact behaviour* below.
+
+## Why
+
+**The problem: `OnEndTouch` boosters fire without a jump.** CS:S bhop and surf maps usually build jump
+boosters as a thin floor trigger with an `OnEndTouch` output (e.g. `!activator AddOutput basevelocity 0 0 800`).
+`OnEndTouch` can't tell *why* you left the trigger, so the boost also fires when you:
+
+- walk or slide off the booster,
+- get pushed off it, or
+- crouch on the exact tick you land on it. Crouching in the air lifts your feet out of the trigger.
+  This is "crouch boosting", and with crouch spam you can sometimes trigger it again.
+
+**The fix: `OnJump`.** It fires only on a real jump made inside the trigger: a normal jump, bhop, crouch
+jump or jumpbug. Convert a booster by renaming its outputs from `OnEndTouch` to `OnJump`, which is exactly
+what Momentum's own map-porting tools do.
+
+**Entity-only tricks don't solve it.** Renaming the player with `AddOutput targetname` and blocking that
+name with a filter works well for boosters used **once per attempt**, such as start boosters. It can't make
+a boost need a jump. Testing bhop_ceaseless showed this: its targetname-gated floor boosters still fired
+from walking off and crouch-landing. `OnJump` covers boosters that should only fire on a jump.
+
+**Plugin only.** A map that relies on these outputs needs this plugin on the server. Vanilla CS:S ignores
 `OnJump` / `OnLand`, and doesn't spawn `trigger_userinput` at all.
+
+## Quick start
+
+- **Server owners:** drop the `.smx` and the gamedata file into SourceMod 1.12+ (details below), then
+  change map.
+- **Mappers:** add `OnJump` / `OnLand` outputs to your triggers. In Hammer, type the name into the output
+  box. Add `fgd/momtriggers.fgd` if you want `trigger_userinput`.
 
 ## Install (server)
 

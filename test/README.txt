@@ -1,19 +1,23 @@
-momtriggers bot tests (see ../README.md)
+Bot tests for momtriggers (see ../README.md).
 
-make_testmap.py [out.bsp]   momtrig_ceaseless.bsp from ~/Desktop/bhop_restricted/bhop_ceaseless.zip (or $CEASELESS)
-mtt.sp                      bot driver: mtt_run <log> <ticks> x y z yaw fwd side "<tick:buttons;...>" [vx vy vz],
-                            mtt_name <targetname>; logs T (per tick), O (trigger outputs), R (relays) rows
-momtrig_tests.py [port] [logdir]   39 checks; changes map to momtrig_ceaseless first
-ceaseless_tests.py          the original bhop_ceaseless boosters (before conversion), for comparison
-bspents.py                  list/dump/replace a BSP entity lump (handles LZMA lumps)
-pevt.py / mksig.py          Windows server.dll RTTI vtables / SourceMod byte signatures
+Files
+  make_testmap.py [out.bsp]   builds momtrig_ceaseless.bsp from bhop_ceaseless.bsp (not included; set CEASELESS=path,
+                              a .zip containing the .bsp also works). Converts Ceaseless's real OnEndTouch boosters to
+                              OnJump and adds test triggers (OnLand, trigger_userinput, filter, OnUser slot conflicts,
+                              tall volume) on a flat floor.
+  mtt.sp                      SourceMod test driver: mtt_run <log> <ticks> x y z yaw fwd side "<tick:buttons;...>" [vx vy vz],
+                              mtt_name <targetname>. Logs T (per tick), O (trigger outputs) and R (logic_relay) rows to
+                              addons/sourcemod/logs/mtt_<log>.tsv
+  momtrig_tests.py [port] [logdir]   the 39 checks; changes the map to momtrig_ceaseless first
+  ceaseless_tests.py          the original (unconverted) bhop_ceaseless boosters, for comparison
+  bspents.py                  list / dump / replace a BSP entity lump (handles LZMA lumps)
+  pevt.py                     MSVC RTTI vtable dump for Windows server.dll (used to verify the gamedata offset)
+  rcon.py                     minimal Source RCON client
 
-Servers used (2026-10-25):
-  Linux:   ~/msf-rig (test-harness/make-rig.sh), port 27115, 100 tick (TickrateEnabler)
-  Windows: ~/cssds-win (steamcmd +@sSteamCmdForcePlatformType windows app 232330) + MM:S/SM 1.12 Windows,
-           run with: WINEPREFIX=~/.wine-cssds DISPLAY= wine srcds.exe -console -game cstrike -insecure
-                     -port 27116 +ip 127.0.0.1 +map momtrig_ceaseless +exec server.cfg      (66.7 tick)
-  Linux 64:   ~/msf-rig64 (rig + srcds_linux64 and bin/linux64/libsteam_api.so copied from the CS:S client,
-             MM:S/SM x64), LD_LIBRARY_PATH=bin/linux64 ./srcds_linux64 ... -port 27117
-  Windows 64: ~/cssds-win + srcds_win64.exe from TF2 DS depot 232255 (DepotDownloader -filelist), -port 27118
-Results: 39/39 on all four (Linux/Windows x 32/64 bit).
+Setup
+  A CS:S server with SourceMod 1.12+, momtriggers.smx + gamedata, mtt.smx, momtrig_ceaseless.bsp (+ a .nav so bots
+  can join), sv_cheats 1, rcon_password mtpass, one bot (bot_add_t).
+  python3 momtrig_tests.py <rcon port> <server>/cstrike/addons/sourcemod/logs
+
+Results (2026-10-25): 39/39 on Linux 32-bit (100 tick), Linux 64-bit, Windows 32-bit and Windows 64-bit (66.7 tick).
+64-bit servers ran on TF2's srcds_linux64 / srcds_win64.exe launchers; the Windows servers ran under Wine.
