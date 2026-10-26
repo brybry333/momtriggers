@@ -15,7 +15,8 @@ Maps that use these outputs only work on servers running the plugin. Vanilla CS:
 
 ## Install (server)
 
-Requirements: SourceMod **1.12 or newer** (the plugin uses its EntityLump API and the bundled DHooks).
+Requirements: SourceMod **1.12 or newer** (the plugin uses its EntityLump API; SDKHooks and SDKTools ship
+with SourceMod, and no DHooks is needed).
 
 Copy these files into your server:
 
@@ -30,15 +31,17 @@ takes effect on the next map.
 | `sm_momtriggers` | (admin) lists the triggers on the current map that use these outputs |
 | `momtriggers_debug 1` | prints every OnJump / OnLand / OnKey* the plugin fires |
 
-**Platforms.** The standard CS:S dedicated server is 32-bit on both Windows and Linux. The full bot
-test suite passed on both:
+**Platforms.** Windows and Linux, 32-bit and 64-bit. The full bot test suite (39 checks) passed on all four:
 
-- Linux `srcds` at 100 tick
-- the real Windows `srcds.exe` at 66.7 tick
+| Server | Tickrate | Result |
+|---|---|---|
+| Linux, 32-bit `srcds_linux` | 100 | 39/39 |
+| Linux, 64-bit `srcds_linux64` | 66.7 | 39/39 |
+| Windows, 32-bit `srcds.exe` | 66.7 | 39/39 |
+| Windows, 64-bit `srcds_win64.exe` | 66.7 | 39/39 |
 
-The gamedata also has 64-bit Windows/Linux entries, checked against the 64-bit `server.dll` and
-`server_srv.so`. They haven't been run, because the CS:S dedicated server doesn't ship a 64-bit
-launcher.
+64-bit CS:S servers use TF2's 64-bit launcher (`srcds_linux64` / `srcds_win64.exe`). The only gamedata entry
+is one vtable offset, checked against all four `server` binaries.
 
 ## For mappers
 
@@ -109,8 +112,11 @@ so it was decompiled from the current Playtest build.
    to a free `OnUserN` slot, and `trigger_userinput` becomes a `trigger_multiple`. CS:S then parses
    these outputs like any other.
 2. **Jumps** come from the `player_jump` event, which CS:S fires inside `CheckJumpButton`.
-3. **Landings** come from a DHooks detour on `CGameMovement::FullWalkMove`, the same place Momentum
-   checks.
+3. **Landings** use the same rule Momentum checks at the end of `CGameMovement::FullWalkMove`. Nothing
+   can change the ground state between the end of movement and the first trigger touch of that command
+   (or `PostThink` if no trigger is touched), so the plugin reads the end-of-movement state there. Every
+   `trigger_*` is watched so a teleport or push can't run first. This needs no DHooks, which SourceMod
+   doesn't have on 64-bit Linux.
 4. **On the trigger:** SDKHooks StartTouch / Touch / EndTouch hooks replay Momentum's trigger logic,
    using `CBaseTrigger::PassesTriggerFilters` (a vtable call). They fire the output with
    `FireUserN` on the trigger, with the player as activator.

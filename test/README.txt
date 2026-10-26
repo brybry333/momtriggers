@@ -13,4 +13,7 @@ Servers used (2026-10-25):
   Windows: ~/cssds-win (steamcmd +@sSteamCmdForcePlatformType windows app 232330) + MM:S/SM 1.12 Windows,
            run with: WINEPREFIX=~/.wine-cssds DISPLAY= wine srcds.exe -console -game cstrike -insecure
                      -port 27116 +ip 127.0.0.1 +map momtrig_ceaseless +exec server.cfg      (66.7 tick)
-Results: 39/39 on both.
+  Linux 64:   ~/msf-rig64 (rig + srcds_linux64 and bin/linux64/libsteam_api.so copied from the CS:S client,
+             MM:S/SM x64), LD_LIBRARY_PATH=bin/linux64 ./srcds_linux64 ... -port 27117
+  Windows 64: ~/cssds-win + srcds_win64.exe from TF2 DS depot 232255 (DepotDownloader -filelist), -port 27118
+Results: 39/39 on all four (Linux/Windows x 32/64 bit).

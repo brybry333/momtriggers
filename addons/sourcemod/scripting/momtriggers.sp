@@ -33,6 +33,10 @@
  * A CS:S server can run several commands of one player in a single tick, so "this tick" is
  * tracked per command here, and each jump / landing fires a given trigger at most once.
  *
+ * Landing is read without DHooks (SourceMod has no DHooks on 64-bit Linux): nothing can change the
+ * ground state between the end of FullWalkMove and the first trigger touch of the same usercmd (or
+ * PostThink when no trigger is touched), so that is where the "end of movement" state is taken.
+ *
  * The outputs are fired through the engine's own output system: at map load the OnJump / OnLand /
  * OnKey* keyvalues are moved to an OnUser1-4 slot the trigger does not use, and firing calls
  * FireUserN with the player as activator (caller = the trigger, same as Momentum).
@@ -44,7 +48,6 @@
 #include <sourcemod>
 #include <sdktools>
 #include <sdkhooks>
-#include <dhooks>
 
 #define PLUGIN_VERSION "1.0.0"
 
@@ -109,10 +112,10 @@ int g_LandTick[MAXPLAYERS + 1];
 int g_LandCmd[MAXPLAYERS + 1];
 int g_LandId[MAXPLAYERS + 1];
 bool g_WasOnGround[MAXPLAYERS + 1];
+bool g_MoveDone[MAXPLAYERS + 1];		// end-of-movement state already taken for the running usercmd
+bool g_HookAllTriggers;				// this map uses Momentum outputs: watch every trigger_*
 
 Handle g_hPassesTriggerFilters;
-DynamicDetour g_hFullWalkMove;
-int g_iOffGMPlayer;
 bool g_bLate;
 int g_iLumpCandidates;
 
@@ -148,14 +151,6 @@ public void OnPluginStart()
 	if (g_hPassesTriggerFilters == null)
 		SetFailState("Failed to set up CBaseTrigger::PassesTriggerFilters");
 
-	g_iOffGMPlayer = gd.GetOffset("CGameMovement::player");
-
-	g_hFullWalkMove = DynamicDetour.FromConf(gd, "CGameMovement::FullWalkMove");
-	if (g_hFullWalkMove == null)
-		SetFailState("Failed to set up the CGameMovement::FullWalkMove detour (gamedata out of date?)");
-	if (!g_hFullWalkMove.Enable(Hook_Post, Hook_FullWalkMovePost))
-		SetFailState("Failed to enable the CGameMovement::FullWalkMove detour");
-
 	delete gd;
 
 	g_Infos = new ArrayList(sizeof(TrigInfo));
@@ -172,7 +167,10 @@ public void OnPluginStart()
 	{
 		ResetClient(i);
 		if (IsClientInGame(i))
+		{
+			SDKHook(i, SDKHook_PostThink, Hook_PostThink);
 			g_WasOnGround[i] = GetEntPropEnt(i, Prop_Data, "m_hGroundEntity") != -1;
+		}
 	}
 
 	if (g_bLate)
@@ -181,11 +179,13 @@ public void OnPluginStart()
 		if (g_Infos.Length == 0 && g_iLumpCandidates > 0)
 			LogMessage("%d entities use Momentum outputs but this plugin was loaded after the map started; change map to enable them.", g_iLumpCandidates);
 
+		g_HookAllTriggers = g_Infos.Length > 0;
+		char classname[64];
 		int maxEnts = GetMaxEntities();
-		for (int ent = MaxClients + 1; ent < maxEnts && ent < MAX_ENTS; ent++)
+		for (int ent = MaxClients + 1; g_HookAllTriggers && ent < maxEnts && ent < MAX_ENTS; ent++)
 		{
-			if (IsValidEntity(ent))
-				TryRegister(ent);
+			if (IsValidEntity(ent) && GetEntityClassname(ent, classname, sizeof(classname)) && strncmp(classname, "trigger_", 8) == 0)
+				WatchTrigger(ent);
 		}
 	}
 }
@@ -198,6 +198,7 @@ public void OnMapInit(const char[] mapName)
 {
 	RewriteLump();
 	BuildInfos();
+	g_HookAllTriggers = g_Infos.Length > 0;
 }
 
 static int OutKind(const char[] key)
@@ -504,7 +505,7 @@ public void OnEntityCreated(int entity, const char[] classname)
 	if (entity > 0 && entity < MAX_ENTS)
 		g_EntInfo[entity] = 0;
 
-	if (g_Infos.Length && strncmp(classname, "trigger_", 8) == 0)
+	if (g_HookAllTriggers && strncmp(classname, "trigger_", 8) == 0)
 		SDKHook(entity, SDKHook_SpawnPost, Hook_SpawnPost);
 }
 
@@ -516,6 +517,18 @@ public void OnEntityDestroyed(int entity)
 
 public void Hook_SpawnPost(int entity)
 {
+	WatchTrigger(entity);
+}
+
+// Every trigger_* is watched so that the first trigger touch of a usercmd (whichever trigger it is,
+// e.g. a teleport that changes the ground) takes the end-of-movement state before any trigger runs.
+static void WatchTrigger(int entity)
+{
+	if (entity <= MaxClients || entity >= MAX_ENTS)
+		return;
+	SDKHook(entity, SDKHook_StartTouch, Hook_StartTouch);
+	SDKHook(entity, SDKHook_Touch, Hook_Touch);
+	SDKHook(entity, SDKHook_EndTouch, Hook_EndTouch);
 	TryRegister(entity);
 }
 
@@ -534,12 +547,6 @@ static void TryRegister(int entity)
 	if (!g_InfoByKey.GetValue(mapKey, idx))
 		return;
 
-	if (g_EntInfo[entity] == 0)
-	{
-		SDKHook(entity, SDKHook_StartTouch, Hook_StartTouch);
-		SDKHook(entity, SDKHook_Touch, Hook_Touch);
-		SDKHook(entity, SDKHook_EndTouch, Hook_EndTouch);
-	}
 	g_EntInfo[entity] = idx + 1;
 
 	for (int i = 0; i <= MaxClients; i++)
@@ -564,6 +571,7 @@ static void ResetClient(int client)
 	g_LandCmd[client] = 0;
 	g_LandId[client] = 0;
 	g_WasOnGround[client] = false;
+	g_MoveDone[client] = true;
 
 	for (int ent = 0; ent < MAX_ENTS; ent++)
 	{
@@ -579,6 +587,7 @@ static void ResetClient(int client)
 public void OnClientPutInServer(int client)
 {
 	ResetClient(client);
+	SDKHook(client, SDKHook_PostThink, Hook_PostThink);
 }
 
 public void OnClientDisconnect(int client)
@@ -592,13 +601,24 @@ public Action OnPlayerRunCmd(int client, int &buttons, int &impulse, float vel[3
 {
 	g_CmdSerial[client]++;
 	g_CmdClient = client;
+	g_MoveDone[client] = false;
 	return Plugin_Continue;
 }
 
 public void OnPlayerRunCmdPost(int client, int buttons, int impulse, const float vel[3], const float angles[3], int weapon, int subtype, int cmdnum, int tickcount, int seed, const int mouse[2])
 {
 	if (g_CmdClient == client)
+	{
+		MovementEnd(client);
 		g_CmdClient = 0;
+	}
+}
+
+// RunCommand: movement, then ProcessImpacts (trigger touches first), then PostThink.
+public void Hook_PostThink(int client)
+{
+	if (g_CmdClient == client)
+		MovementEnd(client);
 }
 
 // CheckJumpButton succeeded (fired from inside the movement code).
@@ -613,43 +633,25 @@ public void Event_PlayerJump(Event event, const char[] name, bool dontBroadcast)
 	g_JumpId[client]++;
 }
 
-// The player CGameMovement is moving: the client whose usercmd is running. On 32 bit this is
-// double-checked against CGameMovement::player (64 bit plugins only see pseudo-addresses).
-static int MovementClient(Address pThis)
+// Momentum (C2013GameMovement::FullWalkMove): landed = on ground at the end of the walk move, not on
+// ground at the end of the previous one. Called once per usercmd, right after the movement.
+static void MovementEnd(int client)
 {
-	int client = g_CmdClient;
-	if (g_iOffGMPlayer != 4)
-		return client;
+	if (g_MoveDone[client])
+		return;
+	g_MoveDone[client] = true;
 
-	Address pPlayer = view_as<Address>(LoadFromAddress(pThis + view_as<Address>(g_iOffGMPlayer), NumberType_Int32));
-	if (client && GetEntityAddress(client) == pPlayer)
-		return client;
-
-	for (int i = 1; i <= MaxClients; i++)
-	{
-		if (IsClientInGame(i) && GetEntityAddress(i) == pPlayer)
-			return i;
-	}
-	return client;
-}
-
-// Momentum (C2013GameMovement::FullWalkMove): landed = on ground now, not on ground at the end of
-// the previous FullWalkMove.
-public MRESReturn Hook_FullWalkMovePost(Address pThis)
-{
-	int client = MovementClient(pThis);
-	if (client <= 0 || client > MaxClients || !IsClientInGame(client))
-		return MRES_Ignored;
+	if (GetEntityMoveType(client) != MOVETYPE_WALK)	// FullWalkMove didn't run (ladder, noclip, ...)
+		return;
 
 	bool onGround = GetEntPropEnt(client, Prop_Data, "m_hGroundEntity") != -1;
 	if (onGround && !g_WasOnGround[client])
 	{
 		g_LandTick[client] = GetGameTickCount();
-		g_LandCmd[client] = (g_CmdClient == client) ? g_CmdSerial[client] : 0;
+		g_LandCmd[client] = g_CmdSerial[client];
 		g_LandId[client]++;
 	}
 	g_WasOnGround[client] = onGround;
-	return MRES_Ignored;
 }
 
 // "this tick" in Momentum terms: the current usercmd while it runs, otherwise the current tick.
@@ -699,14 +701,23 @@ static void TryFireJump(int trigger, TrigInfo ti, int client)
 
 public Action Hook_StartTouch(int trigger, int other)
 {
-	if (g_EntInfo[trigger] && IsPlayer(other) && SDKCall(g_hPassesTriggerFilters, trigger, other))
+	if (!IsPlayer(other))
+		return Plugin_Continue;
+	if (g_CmdClient == other)
+		MovementEnd(other);
+
+	if (g_EntInfo[trigger] && SDKCall(g_hPassesTriggerFilters, trigger, other))
 		g_InList[trigger][other] = true;
 	return Plugin_Continue;
 }
 
 public Action Hook_Touch(int trigger, int other)
 {
-	if (!g_EntInfo[trigger] || !IsPlayer(other))
+	if (!IsPlayer(other))
+		return Plugin_Continue;
+	if (g_CmdClient == other)
+		MovementEnd(other);
+	if (!g_EntInfo[trigger])
 		return Plugin_Continue;
 
 	TrigInfo ti;
