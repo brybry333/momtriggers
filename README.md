@@ -66,14 +66,16 @@ takes effect on the next map.
 | `sm_momtriggers` | (admin) lists the triggers on the current map that use these outputs |
 | `momtriggers_debug 1` | prints every OnJump / OnLand / OnKey* the plugin fires |
 
-**Platforms.** Windows and Linux, 32-bit and 64-bit. The full bot test suite (39 checks) passed on all four:
+**Platforms.** Windows and Linux, 32-bit and 64-bit. The full bot test suite (39 checks) passed on all four
+at **100 tick**, using idk1703's [TickrateEnabler](https://github.com/idk1703/TickrateEnabler) (32/64-bit
+builds). The 64-bit and Windows servers also passed at the default 66.7 tick.
 
-| Server | Tickrate | Result |
+| Server | 100 tick | 66.7 tick |
 |---|---|---|
-| Linux, 32-bit `srcds_linux` | 100 | 39/39 |
-| Linux, 64-bit `srcds_linux64` | 66.7 | 39/39 |
-| Windows, 32-bit `srcds.exe` | 66.7 | 39/39 |
-| Windows, 64-bit `srcds_win64.exe` | 66.7 | 39/39 |
+| Linux, 32-bit `srcds_linux` | 39/39 | (not run) |
+| Linux, 64-bit `srcds_linux64` | 39/39 | 39/39 |
+| Windows, 32-bit `srcds.exe` | 39/39 | 39/39 |
+| Windows, 64-bit `srcds_win64.exe` | 39/39 | 39/39 |
 
 64-bit CS:S servers use TF2's 64-bit launcher (`srcds_linux64` / `srcds_win64.exe`). The only gamedata entry
 is one vtable offset, checked against all four `server` binaries.

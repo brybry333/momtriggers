@@ -19,5 +19,6 @@ Setup
   can join), sv_cheats 1, rcon_password mtpass, one bot (bot_add_t).
   python3 momtrig_tests.py <rcon port> <server>/cstrike/addons/sourcemod/logs
 
-Results (2026-10-25): 39/39 on Linux 32-bit (100 tick), Linux 64-bit, Windows 32-bit and Windows 64-bit (66.7 tick).
+Results (2026-10-25): 39/39 on Linux 32/64-bit and Windows 32/64-bit at 100 tick (idk1703 TickrateEnabler);
+Linux 64 and both Windows servers also 39/39 at 66.7 tick.
 64-bit servers ran on TF2's srcds_linux64 / srcds_win64.exe launchers; the Windows servers ran under Wine.
