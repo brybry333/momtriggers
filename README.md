@@ -68,11 +68,11 @@ takes effect on the next map.
 
 **Platforms.** Windows and Linux, 32-bit and 64-bit. The full bot test suite (39 checks) passed on all four
 at **100 tick**, using idk1703's [TickrateEnabler](https://github.com/idk1703/TickrateEnabler) (32/64-bit
-builds). The 64-bit and Windows servers also passed at the default 66.7 tick.
+builds). All four also passed at the default 66.7 tick.
 
 | Server | 100 tick | 66.7 tick |
 |---|---|---|
-| Linux, 32-bit `srcds_linux` | 39/39 | (not run) |
+| Linux, 32-bit `srcds_linux` | 39/39 | 39/39 |
 | Linux, 64-bit `srcds_linux64` | 39/39 | 39/39 |
 | Windows, 32-bit `srcds.exe` | 39/39 | 39/39 |
 | Windows, 64-bit `srcds_win64.exe` | 39/39 | 39/39 |
