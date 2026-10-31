@@ -69,16 +69,16 @@ takes effect on the next map.
 | `sm_momtriggers` | (admin) lists the triggers on the current map that use these outputs |
 | `momtriggers_debug 1` | prints every OnJump / OnLand / OnKey* the plugin fires |
 
-**Platforms.** Windows and Linux, 32-bit and 64-bit. The full bot test suite (45 checks) passed on all four
+**Platforms.** Windows and Linux, 32-bit and 64-bit. The full bot test suite (49 checks) passed on all four
 at **100 tick**, using idk1703's [TickrateEnabler](https://github.com/idk1703/TickrateEnabler) (32/64-bit
-builds). All four also passed at the default 66.7 tick.
+builds). Linux 32-bit also passed at the default 66.7 tick.
 
 | Server | 100 tick | 66.7 tick |
 |---|---|---|
-| Linux, 32-bit `srcds_linux` | 45/45 | 45/45 |
-| Linux, 64-bit `srcds_linux64` | 45/45 | 45/45 |
-| Windows, 32-bit `srcds.exe` | 45/45 | 45/45 |
-| Windows, 64-bit `srcds_win64.exe` | 45/45 | 45/45 |
+| Linux, 32-bit `srcds_linux` | 49/49 | 49/49 |
+| Linux, 64-bit `srcds_linux64` | 49/49 | not run for 1.2.0 (1.1.0: 45/45) |
+| Windows, 32-bit `srcds.exe` | 49/49 | not run for 1.2.0 (1.1.0: 45/45) |
+| Windows, 64-bit `srcds_win64.exe` | 49/49 | not run for 1.2.0 (1.1.0: 45/45) |
 
 64-bit CS:S servers use TF2's 64-bit launcher (`srcds_linux64` / `srcds_win64.exe`). The only gamedata entry
 is one vtable offset, checked against all four `server` binaries.
@@ -110,6 +110,14 @@ exactly what Momentum's entity tools do ("Convert to OnJump trigger_multiple"):
 `!activator` is the player and `!self` / `!caller` is the trigger, and delays and fire-once counts
 work as usual.
 
+**"Don't land here" zones.** `OnLand` → `!activator AddOutput targetname <name>` plus a `trigger_teleport`
+in the same box that only takes `<name>` (`filter_activator_name`) works like in Momentum: the player is
+teleported on the tick after landing, even if they bhop off right away.
+- Make the box at least ~16 units tall. A bhop's jump lifts the feet ~3 units before the teleport checks
+  the player again, so a 4-unit pad lets them escape (in Momentum too).
+- A jumpbug (unduck + jump just above the floor) never touches the floor, so it isn't a landing. To
+  catch it too, give the same output to `OnJump` as well.
+
 ### Exact behaviour
 
 All of this follows Momentum's own server code. The public Momentum source predates these outputs,
@@ -124,7 +132,8 @@ so it was decompiled from the current Playtest build.
   ground at the end of the previous one, while inside the trigger and passing its filters.
   - Fall speed doesn't matter.
   - A bhop gives OnLand on one tick and OnJump on the next.
-  - A jumpbug gives only OnJump.
+  - A jumpbug gives only OnJump. The jump happens with the feet ~8-9.5 units above the floor, so the
+    player never lands, and OnJump only fires if the trigger reaches that high.
 - **trigger_userinput:**
   - `lookedkey` (default Forward), `lookedkey2` and `lookedkey3` (default None) pick the keys.
   - `OnKeyPressed` fires when one of them is pressed and all of them are now held.
@@ -146,6 +155,13 @@ so it was decompiled from the current Playtest build.
   single player on a local server. A CS:S server can run several commands of one player in one
   tick under lag, so here it's tracked per command. That gives the same result without
   double-firing.
+- **Timing.** Their actions run at the end of the tick of the jump, landing or key press, like in
+  Momentum, so an `AddOutput targetname` is already set when the player moves again on the next tick.
+  - Other outputs fired by a player's movement (`OnStartTouch` etc.) normally run ~6 ticks (60 ms) later
+    on a CS:S server. The player's commands run on their own clock, which the server keeps
+    `sv_clockcorrection_msecs` (default 60 ms) ahead, and the event queue uses that clock. Momentum is
+    single player, so it has no such delay. momtriggers fires its outputs at server time; stock outputs
+    keep CS:S's timing.
 - **Who fires them.** Every player fires them, bots included, the same as all other trigger
   outputs in CS:S. Whether shavit replay bots fire them depends on how they're played back.
 
@@ -160,6 +176,8 @@ so it was decompiled from the current Playtest build.
   them in the map.
 - **Trigger types.** OnJump and OnLand work on `trigger_*` entities, the same ones Momentum supports
   (everything built on CBaseTrigger).
+- **Above 100 tick** the timer that fires the outputs (a `logic_timer`, minimum 0.01 s) can't run every
+  tick, so on the ticks it skips the actions run one tick late instead of on the same tick.
 
 ## How it works
 
@@ -175,6 +193,11 @@ so it was decompiled from the current Playtest build.
 4. **On the trigger:** SDKHooks StartTouch / Touch / EndTouch hooks replay Momentum's trigger logic,
    using `CBaseTrigger::PassesTriggerFilters` (a vtable call). They fire the output with
    `FireUserN` on the trigger, with the player as activator.
+5. **Timing:** an output that happens while a player's command runs (on the player's clock) waits.
+   It's fired later in the same tick, when the game clock is the server's again: by a `logic_timer`
+   the plugin creates, which thinks every tick after all players have moved, or at the start of the
+   next player's command. If a player ends up after the timer in the engine's think order (e.g. someone
+   joined later), the timer is created again at the end of the list.
 
 ## Tests
 
@@ -183,10 +206,12 @@ so it was decompiled from the current Playtest build.
 - `make_testmap.py` builds `momtrig_ceaseless.bsp` from bhop_ceaseless:
   - Ceaseless's real vertical and horizontal boosters, converted to OnJump
   - test triggers for OnLand, `trigger_userinput` (with and without `interval`), filters, OnUser slot
-    conflicts and a tall volume
-- `momtrig_tests.py` runs 45 checks against a server.
+    conflicts, a tall volume (also used for a jumpbug) and a "don't land here" zone (OnLand rename +
+    filtered teleport)
+- `momtrig_tests.py` runs 49 checks against a server, including the timing: actions run on the
+  landing tick, and the zone teleports a player who bhops off it.
 - `mtt.sp` is the bot driver plugin.
 
-All 45 checks passed on all four platforms.
+All 49 checks passed on all four platforms at 100 tick.
 
 Credits: Momentum Mod team (https://github.com/momentum-mod) for the original outputs and entity.

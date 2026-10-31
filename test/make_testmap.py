@@ -15,6 +15,8 @@ the fail teleport 96u above that floor, hammerid 588855, starts disabled in the 
   T7 90007 tall 352x352x256 box (*549 clone)        (4300, -2700)
   T8 90008 all four OnUser slots taken -> OnJump has no slot (error logged)   (5000, -2700)
   T9 90009 trigger_userinput, key speed, interval 0.25 (OnKeyHeld at most every 0.25 s)   (5700, -2700)
+  T10 90010 tall box (*549 clone), OnLand -> !activator AddOutput targetname landed10, and trigger_teleport 90011 in
+            the same box that only takes players named landed10 -> tp10 (6400, -3300): a "don't land here" zone   (6400, -2700)
 Every output triggers a logic_relay r_* so the log shows the action really ran (and with which activator).
 """
 import sys, os, struct
@@ -59,7 +61,7 @@ def main(out):
 
     add = ''
     for r in ['r_l2', 'r_kp3', 'r_kh3', 'r_kr3', 'r_j4', 'r_l4', 'r_u3', 'r_u4', 'r_j5', 'r_j6', 'r_l6', 'r_once6',
-              'r_j7', 'r_l7', 'r_j8', 'r_kp9', 'r_kh9']:
+              'r_j7', 'r_l7', 'r_j8', 'r_kp9', 'r_kh9', 'r_e6']:
         add += relay(r)
     add += ent([('classname', 'filter_activator_name'), ('targetname', 'f_vip'), ('filtername', 'vip'), ('Negated', '0'), ('origin', '3000 -3200 3000')])
     add += pad('*243', 90002, 800, -2700, [('OnLand', 'r_l2,Trigger,,0,-1')])
@@ -70,7 +72,8 @@ def main(out):
                                             ('OnUser3', 'r_u3,Trigger,,0,-1'), ('OnJump', 'r_j4,Trigger,,0,-1'), ('OnLand', 'r_l4,Trigger,,0,-1')])
     add += pad('*410', 90005, 2900, -2700, [('filtername', 'f_vip'), ('OnJump', 'r_j5,Trigger,,0,-1')])
     add += pad('*412', 90006, 3600, -2700, [('targetname', 't6'), ('OnJump', 'r_j6,Trigger,,0,-1'), ('OnLand', 'r_l6,Trigger,,0,-1'),
-                                            ('OnJump', 'r_once6,Trigger,,0,1'), ('OnJump', '!activator,AddOutput,targetname jumper6,0,-1')])
+                                            ('OnJump', 'r_once6,Trigger,,0,1'), ('OnJump', '!activator,AddOutput,targetname jumper6,0,-1'),
+                                            ('OnEndTouch', 'r_e6,Trigger,,0,-1')])
     add += ent([('model', '*549'), ('wait', '1'), ('StartDisabled', '0'), ('spawnflags', '1'), ('origin', '4300 -2700 %d' % (Z + 128)),
                 ('classname', 'trigger_multiple'), ('hammerid', '90007'), ('targetname', 't7'),
                 ('OnJump', 'r_j7,Trigger,,0,-1'), ('OnLand', 'r_l7,Trigger,,0,-1')])
@@ -80,6 +83,13 @@ def main(out):
     add += pad('*231', 90009, 5700, -2700, [('lookedkey', '9'), ('interval', '0.25'),
                                             ('OnKeyPressed', 'r_kp9,Trigger,,0,-1'), ('OnKeyHeld', 'r_kh9,Trigger,,0,-1')],
                cls='trigger_userinput')
+    add += ent([('classname', 'filter_activator_name'), ('targetname', 'f_landed10'), ('filtername', 'landed10'), ('Negated', '0'), ('origin', '3000 -3200 3000')])
+    add += ent([('classname', 'info_teleport_destination'), ('targetname', 'tp10'), ('origin', '6400 -3300 %d' % (Z + 1)), ('angles', '0 90 0')])
+    # tall like T7: a bhop's jump tick lifts the feet ~3u before the teleport checks the player again
+    for hid, cls, kv in ((90010, 'trigger_multiple', [('OnLand', '!activator,AddOutput,targetname landed10,0,-1')]),
+                         (90011, 'trigger_teleport', [('target', 'tp10'), ('filtername', 'f_landed10')])):
+        add += ent([('model', '*549'), ('wait', '1'), ('StartDisabled', '0'), ('spawnflags', '1'), ('origin', '6400 -2700 %d' % (Z + 128)),
+                    ('classname', cls), ('hammerid', str(hid))] + kv)
 
     t = t.rstrip('\0') + add
     new = (t + '\0').encode('latin1')

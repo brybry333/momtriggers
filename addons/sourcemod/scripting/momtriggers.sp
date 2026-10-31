@@ -41,6 +41,15 @@
  * OnKey* keyvalues are moved to an OnUser1-4 slot the trigger does not use, and firing calls
  * FireUserN with the player as activator (caller = the trigger, same as Momentum).
  *
+ * Output timing: an output fired while a usercmd runs is queued at the player's clock (tickbase),
+ * which a multiplayer server keeps sv_clockcorrection_msecs (60 ms = 6 ticks at 100 tick) ahead of
+ * the server, so its actions would run ~6 ticks late. Momentum is single player, where the two
+ * clocks are equal and the actions run at the end of the same tick. So an output that happens while
+ * the clock is not the server's waits, and is fired later in the same tick at server time: by a
+ * logic_timer that thinks every tick after all players have run their usercmds, or at the start of
+ * the next player's usercmd. The game clock is only put back after a player's last usercmd of the
+ * tick, so OnPlayerRunCmdPost is still on the player's clock.
+ *
  * Addition that Momentum does not have: trigger_userinput "interval" (seconds, default 0). OnKeyHeld
  * fires at most once per interval for each player instead of every tick. 0 keeps Momentum's behaviour.
  */
@@ -52,7 +61,7 @@
 #include <sdktools>
 #include <sdkhooks>
 
-#define PLUGIN_VERSION "1.1.0"
+#define PLUGIN_VERSION "1.2.0"
 
 #define MARKER_KEY "_momtriggers"
 #define MAX_ENTS 2048
@@ -99,7 +108,19 @@ enum struct UserRef
 	int slot;
 }
 
+enum struct PendingFire
+{
+	int trigger;			// entity reference
+	int slot;
+	int out;
+	int client;
+}
+
 ArrayList g_Infos;
+ArrayList g_Pending;		// outputs waiting for the server clock (see "Output timing" at the top)
+int g_Helper = INVALID_ENT_REFERENCE;	// logic_timer that fires them after the players' usercmds
+int g_HelperTick = -1;		// tick of its last think
+bool g_HelperMisplaced;		// it thought before a player's usercmd: create it again at the end of the list
 StringMap g_InfoByKey;		// "model|hammerid" -> g_Infos index
 
 int g_EntInfo[MAX_ENTS];	// g_Infos index + 1, 0 = not ours
@@ -160,8 +181,9 @@ public void OnPluginStart()
 
 	g_Infos = new ArrayList(sizeof(TrigInfo));
 	g_InfoByKey = new StringMap();
+	g_Pending = new ArrayList(sizeof(PendingFire));
 
-	CreateConVar("momtriggers_version", PLUGIN_VERSION, "Momentum Trigger Outputs version", FCVAR_NOTIFY | FCVAR_DONTRECORD);
+	CreateConVar("momtriggers_version", PLUGIN_VERSION, "Momentum Trigger Outputs version", FCVAR_NOTIFY | FCVAR_DONTRECORD).SetString(PLUGIN_VERSION);
 	g_cvDebug = CreateConVar("momtriggers_debug", "0", "Print every OnJump / OnLand / OnKey* this plugin fires to the server console.", _, true, 0.0, true, 1.0);
 
 	RegAdminCmd("sm_momtriggers", Command_List, ADMFLAG_GENERIC, "List the triggers using Momentum outputs on this map");
@@ -193,6 +215,13 @@ public void OnPluginStart()
 				WatchTrigger(ent);
 		}
 	}
+}
+
+public void OnPluginEnd()
+{
+	int helper = EntRefToEntIndex(g_Helper);
+	if (helper != INVALID_ENT_REFERENCE)
+		RemoveEntity(helper);
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -616,6 +645,9 @@ public void OnClientDisconnect(int client)
 
 public Action OnPlayerRunCmd(int client, int &buttons, int &impulse, float vel[3], float angles[3], int &weapon, int &subtype, int &cmdnum, int &tickcount, int &seed, int mouse[2])
 {
+	if (g_HelperTick == GetGameTickCount())
+		g_HelperMisplaced = true;
+	FirePending();	// a previous player's outputs, if the clock is the server's again
 	g_CmdSerial[client]++;
 	g_CmdClient = client;
 	g_MoveDone[client] = false;
@@ -629,6 +661,44 @@ public void OnPlayerRunCmdPost(int client, int buttons, int impulse, const float
 		MovementEnd(client);
 		g_CmdClient = 0;
 	}
+}
+
+// Before the tick's usercmds. Leftover outputs (only if the helper didn't run last tick) fire here,
+// one tick late instead of six.
+public void OnGameFrame()
+{
+	FirePending();
+	if (!g_HookAllTriggers)
+		return;
+	int tick = GetGameTickCount();
+	if (g_HelperMisplaced || EntRefToEntIndex(g_Helper) == INVALID_ENT_REFERENCE || g_HelperTick < tick - 2)
+		CreateHelper(tick);
+}
+
+// A new entity goes to the end of the engine's think list, after all players.
+static void CreateHelper(int tick)
+{
+	int old = EntRefToEntIndex(g_Helper);
+	if (old != INVALID_ENT_REFERENCE)
+		RemoveEntity(old);
+
+	int ent = CreateEntityByName("logic_timer");
+	if (ent == -1)
+		return;
+	DispatchKeyValue(ent, "RefireTime", "0.01");	// the minimum: thinks every tick
+	DispatchKeyValue(ent, "StartDisabled", "0");
+	DispatchSpawn(ent);
+	AcceptEntityInput(ent, "Enable");
+	SDKHook(ent, SDKHook_Think, Hook_HelperThink);
+	g_Helper = EntIndexToEntRef(ent);
+	g_HelperTick = tick;
+	g_HelperMisplaced = false;
+}
+
+public void Hook_HelperThink(int entity)
+{
+	g_HelperTick = GetGameTickCount();
+	FirePending();
 }
 
 // RunCommand: movement, then ProcessImpacts (trigger touches first), then PostThink.
@@ -695,7 +765,49 @@ static bool IsPlayer(int ent)
 	return ent > 0 && ent <= MaxClients && IsClientInGame(ent);
 }
 
+// gpGlobals->curtime is the server's (not a player's usercmd clock)
+static bool ServerClock()
+{
+	return FloatAbs(GetGameTime() - GetGameTickCount() * GetTickInterval()) < GetTickInterval() * 0.5;
+}
+
+// On a player's clock the output waits for FirePending (see "Output timing" at the top).
 static void Fire(int trigger, int slot, int out, int client)
+{
+	if (ServerClock())
+	{
+		FireNow(trigger, slot, out, client);
+		return;
+	}
+
+	PendingFire pf;
+	pf.trigger = EntIndexToEntRef(trigger);
+	pf.slot = slot;
+	pf.out = out;
+	pf.client = client;
+	g_Pending.PushArray(pf);
+}
+
+static void FirePending()
+{
+	if (!g_Pending.Length || !ServerClock())
+		return;
+
+	// swap the list first, so anything fired from inside FireNow can't change it under us
+	ArrayList list = g_Pending;
+	g_Pending = new ArrayList(sizeof(PendingFire));
+	for (int i = 0, n = list.Length; i < n; i++)
+	{
+		PendingFire pf;
+		list.GetArray(i, pf);
+		int trigger = EntRefToEntIndex(pf.trigger);
+		if (trigger > MaxClients && IsClientInGame(pf.client))
+			FireNow(trigger, pf.slot, pf.out, pf.client);
+	}
+	delete list;
+}
+
+static void FireNow(int trigger, int slot, int out, int client)
 {
 	if (g_cvDebug.BoolValue)
 	{

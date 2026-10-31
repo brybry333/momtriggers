@@ -4,7 +4,8 @@
 usage: momtrig_tests.py [port] [logdir]     (defaults: 27115, $MTT_LOGS or cstrike/addons/sourcemod/logs)
 Needs mtt.smx + momtriggers.smx loaded and the map momtrig_ceaseless running.
 Expected results follow Momentum's trigger code (decompiled): OnJump/OnLand fire from the trigger's
-Touch on the jump/land command, OnJump also from EndTouch when the jump takes you out that tick.
+Touch on the jump/land command, OnJump also from EndTouch when the jump takes you out that tick, and
+their actions run at the end of that tick (Momentum is single player: no clock correction delay).
 """
 import sys, os, time, re, math
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -94,7 +95,7 @@ ti = float(re.search(r'mtt_tickinterval ([\d.]+)', r.cmd('mtt_tickinterval', 0.3
 print(listing.strip())
 print('tick interval %g' % ti)
 print('\n== registration')
-check('all 11 test triggers registered', all(h in slots for h in (415117, 813193, 813482, 90002, 90003, 90004, 90005, 90006, 90007, 90008, 90009)), str(sorted(slots)))
+check('all 12 test triggers registered', all(h in slots for h in (415117, 813193, 813482, 90002, 90003, 90004, 90005, 90006, 90007, 90008, 90009, 90010)), str(sorted(slots)))
 check('T4 slots avoid its own OnUser3/OnUser4 (OnJump=2, OnLand=1)', slots.get(90004, {}).get('jump') == 2 and slots.get(90004, {}).get('land') == 1, str(slots.get(90004)))
 check('T8 (all OnUser slots used) gets no OnJump slot', slots.get(90008, {}).get('jump') == 0, str(slots.get(90008)))
 check('trigger_userinput converted with 3 key outputs', all(slots.get(90003, {}).get(k) for k in ('pressed', 'held', 'released')), str(slots.get(90003)))
@@ -156,6 +157,7 @@ check('!activator AddOutput renamed the jumper', T[-1]['name'] == 'jumper6', T[-
 T, O, R = run('t6_drop', 60, (3600, -2700, Z + 48), 90, 0, '0:0')
 l = lands(T)
 check('drop onto it: OnLand on the landing tick, no OnJump', fires(O, P, sl) == l and len(l) == 1 and not fires(O, P, sj), 'lands %s fires %s' % (l, fires(O, P, sl)))
+check('its action runs on the landing tick too (r_l6), not ~6 ticks later', relays(R, 'r_l6') == l, 'lands %s r_l6 %s' % (l, relays(R, 'r_l6')))
 land_g = l[0] if l else 30
 T, O, R = run('t6_bhop', 120, (3600, -2700, Z + 48), 90, 0, '0:0;%d:%d;%d:0' % (land_g + 1, IN_JUMP, land_g + 3))
 j, l = jumps(T), lands(T)
@@ -170,11 +172,12 @@ found_endtouch_path = False
 for jt in (exit_g - 1, exit_g, exit_g + 1):
     T, O, R = run('t6_jumpout%d' % jt, 80, (3800, -2700, Z + 1), 0, 250, '0:0;%d:%d;%d:0' % (jt, IN_JUMP, jt + 2), vel=(250, 0, 0))
     j, f, e = jumps(T), fires(O, P, sj), touches(O, P, 'OnEndTouch')
-    order = [o for g, o, c, a in O if c.endswith('#%d' % P) and o in ('OnUser%d' % sj, 'OnEndTouch')]
-    print('    jump at %d: jumps %s OnJump %s OnEndTouch %s order %s' % (jt, j, f, e, order))
+    rj, re_ = relays(R, 'r_j6'), relays(R, 'r_e6')
+    print('    jump at %d: jumps %s OnJump %s OnEndTouch %s, actions r_j6 %s r_e6 %s' % (jt, j, f, e, rj, re_))
     if j and f and e and f[0] == e[0] == j[0]:
-        found_endtouch_path = order[:2] == ['OnUser%d' % sj, 'OnEndTouch']
-        check('jump that carries you out: OnJump from EndTouch, before OnEndTouch, same tick', found_endtouch_path, str(order))
+        found_endtouch_path = rj[:1] == j[:1] and re_[:1] and re_[0] >= rj[0]
+        check('jump that carries you out: OnJump from EndTouch on that tick, its action runs before OnEndTouch\'s', found_endtouch_path,
+              'r_j6 %s r_e6 %s' % (rj, re_))
     elif j and e and j[0] > e[0]:
         check('jump after leaving (tick %d): no OnJump' % jt, not f, str(f))
     elif j:
@@ -188,6 +191,20 @@ T, O, R = run('t7', 130, (4300, -2700, Z + 1), 90, 0, '0:0;10:%d;12:0' % IN_JUMP
 j, l = jumps(T), [g for g in lands(T) if g > 5]
 check('jump inside: OnJump on jump tick', fires(O, P, slots[P]['jump']) == j and len(j) == 1, 'jumps %s fires %s' % (j, fires(O, P, slots[P]['jump'])))
 check('land inside: OnLand on landing tick', [g for g in fires(O, P, slots[P]['land']) if g > 5] == l and len(l) == 1, 'lands %s fires %s' % (l, fires(O, P, slots[P]['land'])))
+
+print('\n== T7 jumpbug (unduck + jump with the feet ~9u above the floor: no landing)')
+floor7 = next(t['z'] for t in T if t['ground'])  # the "t7" run above starts on the floor
+T, O, R = run('t7_fall', 60, (4300, -2700, Z + 40), 90, 0, '0:%d' % IN_DUCK)
+# ducked fall; the same fall from a lower start is the same path shifted down (no ground until the floor)
+k = next(i for i in range(len(T) - 1) if T[i]['z'] - floor7 >= 8.75 > T[i + 1]['z'] - floor7)
+J = T[k + 1]['g']                                 # release duck + jump on this tick
+jb = []
+for target in (8.25, 8.75, 9.25):                 # feet height above the floor before the jump tick
+    s = 40 - (T[k]['z'] - floor7 - target)
+    T2, O2, R2 = run('t7_jb%g' % target, 40, (4300, -2700, Z + s), 90, 0, '0:%d;%d:%d;%d:0' % (IN_DUCK, J, IN_JUMP, J + 3))
+    if not lands(T2) and any(t['g'] == J and t['vz'] > 200 for t in T2):
+        jb.append((target, fires(O2, P, slots[P]['jump']), fires(O2, P, slots[P]['land'])))
+check('jumpbug inside a tall trigger: OnJump on the jump tick, no OnLand', jb and all(fj == [J] and not fl for t, fj, fl in jb), 'jump tick %d %s' % (J, jb))
 
 print('\n== T2 OnLand pad')
 P = 90002
@@ -245,6 +262,19 @@ check('OnKeyHeld actions ran with the player as activator (r_kh9 x4)', len(relay
       str([x for x in R if x[1] == 'r_kh9']))
 T, O, R = run('t3_still_every_tick', 30, (1500, -2700, Z + 1), 90, 0, '0:0;5:%d;20:0' % (IN_SPEED | IN_WALK))
 check('T3 (no interval) still fires OnKeyHeld every tick', fires(O, 90003, slots[90003]['held']) == list(range(5, 20)), str(fires(O, 90003, slots[90003]['held'])))
+
+print('\n== T10 no-landing pad: OnLand renames the player, a teleport in the same box takes that name')
+P = 90010
+T, O, R = run('t10_drop', 60, (6400, -2700, Z + 48), 90, 0, '0:0')
+l = lands(T)
+tp = [b['g'] for a, b in zip(T, T[1:]) if b['y'] - a['y'] < -300]
+check('land on it: OnLand on the landing tick, teleported on the next tick', l and fires(O, P, slots[P]['land']) == l[:1] and tp == [l[0] + 1],
+      'lands %s fires %s teleported %s' % (l, fires(O, P, slots[P]['land']), tp))
+land_g = l[0] if l else 30
+T, O, R = run('t10_bhop', 60, (6400, -2700, Z + 48), 90, 0, '0:0;%d:%d;%d:0' % (land_g + 1, IN_JUMP, land_g + 3))
+j = jumps(T)
+tp = [b['g'] for a, b in zip(T, T[1:]) if b['y'] - a['y'] < -300]
+check('land and bhop off it right away: still teleported on the next tick', j == [land_g + 1] and tp == [land_g + 1], 'jumps %s teleported %s' % (j, tp))
 
 print('\n== plugin reload mid-map')
 out = r.cmd('sm plugins reload momtriggers', 1.0)
